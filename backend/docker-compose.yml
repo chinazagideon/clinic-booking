@@ -40,7 +40,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://clinic:clinic_secret@postgres:5432/clinic_booking
       REDIS_URL: redis://redis:6379/0
-      API_KEY: ${API_KEY:-koya-secret-api-key}
+      API_KEY: ${API_KEY:-secret-api-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,7 +54,7 @@ services:
     volumes:
       - .:/app
     environment:
-      API_KEY: koya-secret-api-key
+      API_KEY: ${API_KEY:-secret-api-key}
     command: ["pytest", "-v"]
 
 volumes:
