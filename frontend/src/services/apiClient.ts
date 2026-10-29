@@ -10,9 +10,7 @@ import {
 
 // Configured strictly from environment variables
 const API_KEY = (import.meta.env.VITE_API_KEY as string) || '';
-
-// In dev, Vite proxies /api to http://localhost:8000.
-const BASE_URL = '/api';
+const BASE_URL = (import.meta.env.VITE_BACKEND_URL as string) || '';
 
 async function request<T>(
   path: string,
