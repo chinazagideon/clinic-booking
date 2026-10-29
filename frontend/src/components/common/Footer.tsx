@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, ShieldCheck, Zap } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { APP_CONFIG } from '../../constants/app';
 
 export const Footer: React.FC = () => {
