@@ -14,12 +14,40 @@ def format_datetime_utc(dt: datetime) -> str:
 class SlotSchema(BaseModel):
     """Schema representing an appointment slot."""
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": "s1",
+                "provider": "Dr Ade",
+                "start": "2026-12-10T09:00:00Z",
+                "end": "2026-12-10T09:30:00Z",
+            }
+        },
+    )
 
-    id: str = Field(..., min_length=1)
-    provider: str = Field(..., min_length=1)
-    start: datetime
-    end: datetime
+    id: str = Field(
+        ...,
+        min_length=1,
+        description="Unique identifier for the appointment slot",
+        examples=["s1"],
+    )
+    provider: str = Field(
+        ...,
+        min_length=1,
+        description="Name of the doctor or healthcare practitioner",
+        examples=["Dr Ade"],
+    )
+    start: datetime = Field(
+        ...,
+        description="Slot starting time in UTC (ISO-8601)",
+        examples=["2026-12-10T09:00:00Z"],
+    )
+    end: datetime = Field(
+        ...,
+        description="Slot concluding time in UTC (ISO-8601)",
+        examples=["2026-12-10T09:30:00Z"],
+    )
 
     @field_validator("id", "provider")
     @classmethod
@@ -46,16 +74,47 @@ class SlotSchema(BaseModel):
 class SlotWithAvailabilitySchema(SlotSchema):
     """Schema representing a slot with booking availability status."""
 
-    available: bool
+    available: bool = Field(
+        ...,
+        description="Whether the slot is currently open for booking (false if an active confirmed booking exists)",
+        examples=[True],
+    )
 
 
 class ResetSlotsRequest(BaseModel):
     """Request payload for POST /reset."""
 
-    slots: list[SlotSchema]
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "slots": [
+                    {
+                        "id": "s1",
+                        "provider": "Dr Ade",
+                        "start": "2026-12-10T09:00:00Z",
+                        "end": "2026-12-10T09:30:00Z",
+                    },
+                    {
+                        "id": "s2",
+                        "provider": "Dr Ade",
+                        "start": "2026-12-10T10:00:00Z",
+                        "end": "2026-12-10T10:30:00Z",
+                    },
+                ]
+            }
+        }
+    )
+
+    slots: list[SlotSchema] = Field(
+        ...,
+        description="Complete list of appointment slots to seed. All previous bookings and slots will be replaced.",
+    )
 
 
 class SlotListResponse(BaseModel):
     """Response payload for GET /slots."""
 
-    slots: list[SlotWithAvailabilitySchema]
+    slots: list[SlotWithAvailabilitySchema] = Field(
+        ...,
+        description="List of appointment slots matching query criteria, ordered chronologically by earliest start time.",
+    )

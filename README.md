@@ -38,3 +38,17 @@ uv run uvicorn src.main:app --reload --port 8000
 ```bash
 uv run pytest -v
 ```
+
+### 5. Run Frontend UI Dashboard (Cal.com Style)
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend dashboard will be live at `http://localhost:5173`, proxied to the backend at `http://localhost:8000`.
+- **Book Appointment**: UI for provider & slot picker.
+- **My Bookings**: Look up appointments by email with cursor pagination or booking ID, with instant cancellation.
+- **Admin Operations**: Slot seeding via presets or custom JSON (`POST /reset`) and live inventory inspection.
+- **API Security**: The `X-API-Key` is configured strictly via `frontend/.env` (`VITE_API_KEY`) and automatically attached to requests.
