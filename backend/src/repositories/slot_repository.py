@@ -1,6 +1,8 @@
 from sqlalchemy import case, delete, exists, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import BadRequestError
 from src.models.db.booking import BookingModel
 from src.models.db.slot import SlotModel
 from src.models.schemas.slot import SlotSchema, SlotWithAvailabilitySchema
@@ -16,6 +18,7 @@ class SlotRepository:
         """Delete all existing bookings and slots, then insert new slot records."""
         await self.session.execute(delete(BookingModel))
         await self.session.execute(delete(SlotModel))
+        await self.session.flush()
 
         if slots:
             db_slots = [
@@ -29,7 +32,11 @@ class SlotRepository:
             ]
             self.session.add_all(db_slots)
 
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise BadRequestError("Duplicate slot id or time conflict") from exc
 
     async def list_slots_with_availability(
         self, provider: str | None = None

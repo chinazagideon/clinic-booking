@@ -1,5 +1,12 @@
 from datetime import datetime, timezone
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 
 def format_datetime_utc(dt: datetime) -> str:
@@ -65,6 +72,13 @@ class SlotSchema(BaseModel):
             return v.replace(tzinfo=timezone.utc)
         return v.astimezone(timezone.utc)
 
+    @model_validator(mode="after")
+    def validate_time_order(self) -> "SlotSchema":
+        """Ensure slot end time is strictly after start time."""
+        if self.end <= self.start:
+            raise ValueError("Slot end time must be after start time")
+        return self
+
     @field_serializer("start", "end")
     def serialize_dt(self, dt: datetime) -> str:
         """Serialize datetime to UTC ISO string with Z suffix."""
@@ -109,6 +123,25 @@ class ResetSlotsRequest(BaseModel):
         ...,
         description="Complete list of appointment slots to seed. All previous bookings and slots will be replaced.",
     )
+
+    @model_validator(mode="after")
+    def validate_unique_and_non_overlapping_slots(self) -> "ResetSlotsRequest":
+        """Enforce unique slot IDs and globally non-overlapping slot times."""
+        seen_ids: set[str] = set()
+        for slot in self.slots:
+            if slot.id in seen_ids:
+                raise ValueError(f"Duplicate slot id '{slot.id}'")
+            seen_ids.add(slot.id)
+
+        sorted_slots = sorted(self.slots, key=lambda s: (s.start, s.end))
+        for i in range(1, len(sorted_slots)):
+            prev = sorted_slots[i - 1]
+            curr = sorted_slots[i]
+            if curr.start == prev.start:
+                raise ValueError("Two slots cannot have the same time")
+            if curr.start < prev.end:
+                raise ValueError("Slots cannot have overlapping times")
+        return self
 
 
 class SlotListResponse(BaseModel):

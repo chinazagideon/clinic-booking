@@ -110,3 +110,117 @@ async def test_trim_and_lowercase_normalization(client: httpx.AsyncClient) -> No
     data = res.json()
     assert data["name"] == "Ada Obi"
     assert data["email"] == "ada.obi@example.com"
+
+
+async def test_reset_rejects_slots_with_same_time(client: httpx.AsyncClient) -> None:
+    # Exact same time across different providers must be rejected globally
+    res_diff_providers = await client.post(
+        "/reset",
+        json={
+            "slots": [
+                {
+                    "id": "s1",
+                    "provider": "Dr Ade",
+                    "start": "2027-06-15T09:00:00Z",
+                    "end": "2027-06-15T09:30:00Z",
+                },
+                {
+                    "id": "s2",
+                    "provider": "Dr Smith",
+                    "start": "2027-06-15T09:00:00Z",
+                    "end": "2027-06-15T09:30:00Z",
+                },
+            ]
+        },
+    )
+    assert res_diff_providers.status_code == 400
+    assert "error" in res_diff_providers.json()
+
+    # Exact same time for the same provider must also be rejected
+    res_same_provider = await client.post(
+        "/reset",
+        json={
+            "slots": [
+                {
+                    "id": "s1",
+                    "provider": "Dr Ade",
+                    "start": "2027-06-15T09:00:00Z",
+                    "end": "2027-06-15T09:30:00Z",
+                },
+                {
+                    "id": "s2",
+                    "provider": "Dr Ade",
+                    "start": "2027-06-15T09:00:00Z",
+                    "end": "2027-06-15T09:30:00Z",
+                },
+            ]
+        },
+    )
+    assert res_same_provider.status_code == 400
+    assert "error" in res_same_provider.json()
+
+
+async def test_reset_rejects_overlapping_slots(client: httpx.AsyncClient) -> None:
+    res = await client.post(
+        "/reset",
+        json={
+            "slots": [
+                {
+                    "id": "s1",
+                    "provider": "Dr Ade",
+                    "start": "2027-06-15T09:00:00Z",
+                    "end": "2027-06-15T09:30:00Z",
+                },
+                {
+                    "id": "s2",
+                    "provider": "Dr Smith",
+                    "start": "2027-06-15T09:15:00Z",
+                    "end": "2027-06-15T09:45:00Z",
+                },
+            ]
+        },
+    )
+    assert res.status_code == 400
+    assert "error" in res.json()
+
+
+async def test_reset_rejects_duplicate_slot_ids_and_invalid_time_order(
+    client: httpx.AsyncClient,
+) -> None:
+    res_dup_id = await client.post(
+        "/reset",
+        json={
+            "slots": [
+                {
+                    "id": "s1",
+                    "provider": "Dr Ade",
+                    "start": "2027-06-15T09:00:00Z",
+                    "end": "2027-06-15T09:30:00Z",
+                },
+                {
+                    "id": "s1",
+                    "provider": "Dr Smith",
+                    "start": "2027-06-15T10:00:00Z",
+                    "end": "2027-06-15T10:30:00Z",
+                },
+            ]
+        },
+    )
+    assert res_dup_id.status_code == 400
+    assert "error" in res_dup_id.json()
+
+    res_bad_order = await client.post(
+        "/reset",
+        json={
+            "slots": [
+                {
+                    "id": "s1",
+                    "provider": "Dr Ade",
+                    "start": "2027-06-15T09:30:00Z",
+                    "end": "2027-06-15T09:00:00Z",
+                }
+            ]
+        },
+    )
+    assert res_bad_order.status_code == 400
+    assert "error" in res_bad_order.json()

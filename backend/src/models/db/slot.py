@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import DateTime, Index, String
+from sqlalchemy import CheckConstraint, DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.database import Base
@@ -23,4 +23,7 @@ class SlotModel(Base):
 
     __table_args__ = (
         Index("ix_slots_start_id", "start", "id"),
+        Index("uq_slots_start", "start", unique=True),
+        Index("uq_slots_start_end", "start", "end", unique=True),
+        CheckConstraint("end > start", name="ck_slots_end_after_start"),
     )
