@@ -3,6 +3,7 @@ import {
   SlotWithAvailability,
   NewBooking,
   Booking,
+  BookingCreationResult,
   BookingsPageResponse,
   SlotsResponse,
   ApiError,
@@ -22,11 +23,17 @@ function getBaseUrl(): string {
   return '';
 }
 
-async function request<T>(
+interface ApiResponseWithMeta<T> {
+  data: T;
+  headers: Headers;
+  status: number;
+}
+
+async function requestWithMeta<T>(
   path: string,
   options: RequestInit = {},
   customHeaders: Record<string, string> = {}
-): Promise<T> {
+): Promise<ApiResponseWithMeta<T>> {
   const baseUrl = getBaseUrl();
   if (!baseUrl) {
     const missingUrlError: ApiError = {
@@ -85,10 +92,16 @@ async function request<T>(
 
     // Handle 200/201 responses with no content or JSON
     const contentType = response.headers.get('content-type');
+    let data = {} as T;
     if (contentType && contentType.includes('application/json')) {
-      return (await response.json()) as T;
+      data = (await response.json()) as T;
     }
-    return {} as T;
+
+    return {
+      data,
+      headers: response.headers,
+      status: response.status,
+    };
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'status' in err) {
       throw err;
@@ -99,6 +112,15 @@ async function request<T>(
     };
     throw networkErr;
   }
+}
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  customHeaders: Record<string, string> = {}
+): Promise<T> {
+  const res = await requestWithMeta<T>(path, options, customHeaders);
+  return res.data;
 }
 
 export const clinicApi = {
@@ -114,12 +136,15 @@ export const clinicApi = {
   },
 
   // POST /bookings
-  async createBooking(booking: NewBooking, idempotencyKey?: string): Promise<Booking> {
+  async createBooking(
+    booking: NewBooking,
+    idempotencyKey?: string
+  ): Promise<BookingCreationResult> {
     const customHeaders: Record<string, string> = {};
     if (idempotencyKey) {
       customHeaders['Idempotency-Key'] = idempotencyKey;
     }
-    return await request<Booking>(
+    const response = await requestWithMeta<Booking>(
       '/bookings',
       {
         method: 'POST',
@@ -127,6 +152,13 @@ export const clinicApi = {
       },
       customHeaders
     );
+    const isReplayed =
+      response.headers.get('Idempotent-Replayed') === 'true' ||
+      response.headers.get('idempotent-replayed') === 'true';
+    return {
+      booking: response.data,
+      isReplayed,
+    };
   },
 
   // GET /bookings

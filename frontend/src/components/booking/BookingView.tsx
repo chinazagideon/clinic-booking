@@ -6,7 +6,7 @@ import {
   Sparkles,
   Filter,
 } from 'lucide-react';
-import { SlotWithAvailability, Booking, ApiError } from '../../types/api';
+import { SlotWithAvailability, Booking, BookingCreationResult, ApiError } from '../../types/api';
 import { useSlots } from '../../hooks/useSlots';
 import {
   getIsoDateKey,
@@ -35,6 +35,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
   const [confirmedBooking, setConfirmedBooking] = useState<{
     booking: Booking;
     slot: SlotWithAvailability;
+    isReplayed?: boolean;
   } | null>(null);
   const [showOnlyAvailable, setShowOnlyAvailable] = useState<boolean>(true);
 
@@ -58,9 +59,20 @@ export const BookingView: React.FC<BookingViewProps> = ({
     });
   }, [slots, selectedDateStr, showOnlyAvailable]);
 
-  const handleBookingConfirmed = (booking: Booking, slot: SlotWithAvailability) => {
-    setConfirmedBooking({ booking, slot });
-    onSuccessToast('Appointment Confirmed', `Booking ${booking.id} reserved successfully!`);
+  const handleBookingConfirmed = (result: BookingCreationResult, slot: SlotWithAvailability) => {
+    setConfirmedBooking({
+      booking: result.booking,
+      slot,
+      isReplayed: result.isReplayed,
+    });
+    if (result.isReplayed) {
+      onSuccessToast(
+        'Existing Reservation Retrieved',
+        `Identical booking ${result.booking.id} was already confirmed.`
+      );
+    } else {
+      onSuccessToast('Appointment Confirmed', `Booking ${result.booking.id} reserved successfully!`);
+    }
     refetch(selectedProvider);
   };
 
@@ -70,6 +82,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
         <BookingSuccessCard
           booking={confirmedBooking.booking}
           slot={confirmedBooking.slot}
+          isReplayed={confirmedBooking.isReplayed}
           onBookAnother={() => setConfirmedBooking(null)}
           onViewBookings={() => onViewMyBookings(confirmedBooking.booking.email)}
         />

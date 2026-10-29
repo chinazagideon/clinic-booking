@@ -26,6 +26,11 @@ export interface Booking {
   created_at: string;
 }
 
+export interface BookingCreationResult {
+  booking: Booking;
+  isReplayed: boolean;
+}
+
 export interface BookingsPageResponse {
   bookings: Booking[];
   next_cursor: string | null;

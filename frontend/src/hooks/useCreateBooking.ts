@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
-import { NewBooking, Booking, ApiError } from '../types/api';
+import { NewBooking, BookingCreationResult, ApiError } from '../types/api';
 import { clinicApi } from '../services/apiClient';
 
 interface UseCreateBookingReturn {
-  mutateAsync: (booking: NewBooking, idempotencyKey?: string) => Promise<Booking>;
+  mutateAsync: (booking: NewBooking, idempotencyKey?: string) => Promise<BookingCreationResult>;
   isSubmitting: boolean;
   error: ApiError | null;
   resetError: () => void;
@@ -18,7 +18,7 @@ export function useCreateBooking(): UseCreateBookingReturn {
   }, []);
 
   const mutateAsync = useCallback(
-    async (booking: NewBooking, idempotencyKey?: string): Promise<Booking> => {
+    async (booking: NewBooking, idempotencyKey?: string): Promise<BookingCreationResult> => {
       setIsSubmitting(true);
       setError(null);
       try {

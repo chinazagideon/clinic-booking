@@ -1,11 +1,12 @@
 import React from 'react';
-import { Check, Calendar, User, Mail, Hash, ArrowRight } from 'lucide-react';
+import { Check, Calendar, User, Mail, Hash, ArrowRight, ShieldCheck } from 'lucide-react';
 import { Booking, SlotWithAvailability } from '../../types/api';
 import { formatFullDateTime } from '../../utils/date';
 
 interface BookingSuccessCardProps {
   booking: Booking;
   slot?: SlotWithAvailability;
+  isReplayed?: boolean;
   onBookAnother: () => void;
   onViewBookings: (email: string) => void;
 }
@@ -13,6 +14,7 @@ interface BookingSuccessCardProps {
 export const BookingSuccessCard: React.FC<BookingSuccessCardProps> = ({
   booking,
   slot,
+  isReplayed = false,
   onBookAnother,
   onViewBookings,
 }) => {
@@ -21,14 +23,28 @@ export const BookingSuccessCard: React.FC<BookingSuccessCardProps> = ({
   return (
     <div className="bg-white border border-[#e5e7eb] rounded-xl p-8 max-w-lg mx-auto shadow-sm text-center">
       <div className="w-14 h-14 bg-[#ecfdf5] border border-[#a7f3d0] rounded-full flex items-center justify-center mx-auto mb-4">
-        <Check className="w-7 h-7 text-[#10b981]" />
+        {isReplayed ? (
+          <ShieldCheck className="w-7 h-7 text-[#10b981]" />
+        ) : (
+          <Check className="w-7 h-7 text-[#10b981]" />
+        )}
+      </div>
+
+      <div className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-semibold mb-2 bg-[#f5f5f5] text-[#374151] border border-[#e5e7eb]">
+        {isReplayed ? (
+          <span className="text-[#059669]">Existing Reservation Retrieved</span>
+        ) : (
+          <span className="text-[#10b981]">New Booking Confirmed</span>
+        )}
       </div>
 
       <h3 className="text-2xl font-semibold text-[#111111] cal-display-headline mb-2">
-        Appointment Confirmed
+        {isReplayed ? 'Appointment Already Confirmed' : 'Appointment Confirmed'}
       </h3>
       <p className="text-sm text-[#6b7280] mb-6">
-        Your booking has been successfully recorded in the clinic system.
+        {isReplayed
+          ? 'An identical request was previously completed. Your confirmed reservation details were safely retrieved without duplicate bookings.'
+          : 'Your booking has been successfully recorded in the clinic system.'}
       </p>
 
       <div className="bg-[#f5f5f5] rounded-xl p-5 text-left space-y-3 mb-6 border border-[#e5e7eb]">

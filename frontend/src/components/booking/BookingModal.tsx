@@ -1,6 +1,18 @@
-import React, { useState } from 'react';
-import { X, Calendar, Clock, User, Mail, ShieldAlert, Sparkles, CheckCircle2 } from 'lucide-react';
-import { SlotWithAvailability, Booking, ApiError } from '../../types/api';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  X,
+  Calendar,
+  Clock,
+  User,
+  Mail,
+  ShieldAlert,
+  CheckCircle2,
+} from 'lucide-react';
+import {
+  SlotWithAvailability,
+  BookingCreationResult,
+  ApiError,
+} from '../../types/api';
 import { useCreateBooking } from '../../hooks/useCreateBooking';
 import { formatDateWithWeekday, formatTimeRange } from '../../utils/date';
 import { APP_CONFIG } from '../../constants/app';
@@ -9,7 +21,7 @@ interface BookingModalProps {
   slot: SlotWithAvailability | null;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (booking: Booking, slot: SlotWithAvailability) => void;
+  onSuccess: (result: BookingCreationResult, slot: SlotWithAvailability) => void;
   onErrorToast: (error: ApiError) => void;
 }
 
@@ -22,9 +34,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [enableIdempotency, setEnableIdempotency] = useState(true);
-  const [idempotencyKey, setIdempotencyKey] = useState(() => 'key-' + Math.random().toString(36).substring(2, 10));
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Intent-scoped key: held constant across retries with identical payload
+  const idempotencyKeyRef = useRef<string>('');
+  const lastPayloadRef = useRef<{
+    slot_id: string;
+    name: string;
+    email: string;
+  } | null>(null);
+
+  // Mint a new intent-scoped idempotency key whenever the modal opens for a new slot session
+  useEffect(() => {
+    if (isOpen && slot) {
+      idempotencyKeyRef.current = `idem-${slot.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      lastPayloadRef.current = null;
+      setValidationError(null);
+    }
+  }, [isOpen, slot?.id]);
 
   const { mutateAsync: createBooking, isSubmitting } = useCreateBooking();
 
@@ -32,10 +59,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
   const formattedDate = formatDateWithWeekday(slot.start);
   const formattedTime = formatTimeRange(slot.start, slot.end);
-
-  const regenerateKey = () => {
-    setIdempotencyKey('key-' + Math.random().toString(36).substring(2, 10));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,14 +77,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       return;
     }
 
+    // Only mint a new key if the payload content actually changed from a prior attempt,
+    // avoiding 422 payload mismatches. Safe transport retries keep the identical key.
+    if (
+      lastPayloadRef.current &&
+      (lastPayloadRef.current.name !== trimmedName ||
+        lastPayloadRef.current.email !== trimmedEmail ||
+        lastPayloadRef.current.slot_id !== slot.id)
+    ) {
+      idempotencyKeyRef.current = `idem-${slot.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    }
+
+    lastPayloadRef.current = {
+      slot_id: slot.id,
+      name: trimmedName,
+      email: trimmedEmail,
+    };
+
     try {
       const result = await createBooking(
-        {
-          slot_id: slot.id,
-          name: trimmedName,
-          email: trimmedEmail,
-        },
-        enableIdempotency ? idempotencyKey : undefined
+        lastPayloadRef.current,
+        idempotencyKeyRef.current
       );
 
       onSuccess(result, slot);
@@ -156,46 +192,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 required
               />
             </div>
-            <p className="text-[11px] text-[#6b7280] mt-1">
-              Rate limit: max {APP_CONFIG.rateLimit.maxAttemptsPerMinute} bookings per email per minute.
-            </p>
-          </div>
-
-          {/* Advanced: Idempotency Key */}
-          <div className="pt-2 border-t border-[#f3f4f6]">
-            <div className="flex items-center justify-between mb-2">
-              <label className="flex items-center space-x-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableIdempotency}
-                  onChange={(e) => setEnableIdempotency(e.target.checked)}
-                  className="rounded text-[#111111] focus:ring-0"
-                />
-                <span className="text-xs font-medium text-[#374151]">
-                  Send Idempotency-Key Header
-                </span>
-              </label>
-
-              {enableIdempotency && (
-                <button
-                  type="button"
-                  onClick={regenerateKey}
-                  className="text-[11px] text-[#6b7280] hover:text-[#111111] flex items-center space-x-1"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>Regenerate</span>
-                </button>
-              )}
-            </div>
-
-            {enableIdempotency && (
-              <input
-                type="text"
-                value={idempotencyKey}
-                onChange={(e) => setIdempotencyKey(e.target.value)}
-                className="w-full px-3 py-1.5 text-xs font-mono bg-[#f8f9fa] border border-[#e5e7eb] rounded text-[#374151]"
-              />
-            )}
           </div>
 
           <div className="flex items-center justify-end space-x-3 pt-3 border-t border-[#e5e7eb]">
