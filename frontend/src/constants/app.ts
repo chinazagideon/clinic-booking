@@ -3,8 +3,8 @@ export const APP_CONFIG = {
   version: 'v1.0',
   title: 'Slotly - Clinic Booking',
   tagline: "Modern patient scheduling software",
-  copyrightNotice: '© 2026 Slotly - Clinic Booking Assessment',
-  stackDescription: 'FastAPI + Async SQLAlchemy + Redis + React Vite',
+  copyrightNotice: '© 2026 Slotly ',
+  stackDescription: 'Clinic Booking Assessment',
   rateLimit: {
     maxAttemptsPerMinute: 5,
   },
