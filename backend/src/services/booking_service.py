@@ -13,6 +13,8 @@ from src.core.exceptions import (
     BadRequestError,
     ConflictError,
     NotFoundError,
+    RateLimitExceededError,
+    UnprocessableEntityError,
 )
 from src.models.db.booking import BookingModel
 from src.models.schemas.booking import (
@@ -26,8 +28,9 @@ from src.repositories.slot_repository import SlotRepository
 from src.services.idempotency import IdempotencyService
 from src.services.rate_limiter import RateLimiterService
 
+MAX_IDEMPOTENCY_KEY_LENGTH = 255
+
 _slot_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-_idempotency_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 class BookingService:
@@ -53,7 +56,7 @@ class BookingService:
         self,
         raw_payload: Any,
         idempotency_key: str | None = None,
-    ) -> tuple[int, dict[str, Any]]:
+    ) -> tuple[int, dict[str, Any], bool]:
         """Create a new booking with idempotency and rate limiting safeguards.
 
         Handles:
@@ -66,7 +69,7 @@ class BookingService:
             idempotency_key: Optional Idempotency-Key HTTP header value.
 
         Returns:
-            A tuple of (http_status_code, response_payload_dict).
+            A tuple of (http_status_code, response_payload_dict, is_replayed).
 
         Raises:
             RateLimitExceededError: When email attempt limit is exceeded (HTTP 429).
@@ -79,32 +82,38 @@ class BookingService:
             raw_payload.get("email") if isinstance(raw_payload, dict) else None
         )
         clean_idem_key = idempotency_key.strip() if idempotency_key else None
+        if clean_idem_key and len(clean_idem_key) > MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise BadRequestError(
+                f"Idempotency-Key must be at most {MAX_IDEMPOTENCY_KEY_LENGTH} characters"
+            )
 
         # Handle Level 4: Idempotency-Key workflow
         if clean_idem_key:
-            async with _idempotency_locks[clean_idem_key]:
-                # 1. Check if this key was already seen
-                try:
-                    cached = await self.idempotency.get_cached_response(
-                        clean_idem_key, raw_payload
-                    )
-                except AppError:
-                    # Payload mismatch (422) counts as a failed attempt towards rate limit
-                    await self.rate_limiter.check_and_record_attempt(raw_email)
-                    raise
+            # Atomically claim the key (safe across workers) or resolve it
+            # against the original request.
+            try:
+                cached = await self.idempotency.begin(clean_idem_key, raw_payload)
+            except UnprocessableEntityError:
+                # Payload mismatch (422) counts as a failed attempt towards rate limit
+                await self.rate_limiter.check_and_record_attempt(raw_email)
+                raise
 
-                # Replay identical previous response without repeating side-effects
-                if cached is not None:
-                    return cached
+            # Replay identical previous response without repeating side-effects
+            if cached is not None:
+                return cached[0], cached[1], True
 
+            # We own the key from here on; any non-cached outcome must release it.
+            try:
                 # Record rate-limiting attempt before executing initial action
                 await self.rate_limiter.check_and_record_attempt(raw_email)
-
-                try:
-                    status_code, response_body = await self._execute_booking_creation(
-                        raw_payload
-                    )
-                except AppError as exc:
+                status_code, response_body = await self._execute_booking_creation(
+                    raw_payload
+                )
+            except AppError as exc:
+                if isinstance(exc, RateLimitExceededError):
+                    # Rate-limited attempts are not cached; client may retry later
+                    await self.idempotency.release(clean_idem_key)
+                else:
                     # Cache failed attempt response under this idempotency key
                     await self.idempotency.save_response(
                         clean_idem_key,
@@ -112,20 +121,25 @@ class BookingService:
                         exc.status_code,
                         {"error": exc.message},
                     )
-                    raise
+                raise
+            except BaseException:
+                # Unexpected failure: free the key so the client can retry
+                await self.idempotency.release(clean_idem_key)
+                raise
 
-                # Cache successful creation response under this idempotency key
-                await self.idempotency.save_response(
-                    clean_idem_key,
-                    raw_payload,
-                    status_code,
-                    response_body,
-                )
-                return status_code, response_body
+            # Cache successful creation response under this idempotency key
+            await self.idempotency.save_response(
+                clean_idem_key,
+                raw_payload,
+                status_code,
+                response_body,
+            )
+            return status_code, response_body, False
 
         # Non-idempotent request: record attempt and create booking
         await self.rate_limiter.check_and_record_attempt(raw_email)
-        return await self._execute_booking_creation(raw_payload)
+        status_code, response_body = await self._execute_booking_creation(raw_payload)
+        return status_code, response_body, False
 
     async def _execute_booking_creation(
         self, raw_payload: Any

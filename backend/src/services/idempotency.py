@@ -1,14 +1,28 @@
+import asyncio
 import hashlib
 import json
 from typing import Any
 import redis.asyncio as redis
 
 from src.core.config import get_settings
-from src.core.exceptions import UnprocessableEntityError
+from src.core.exceptions import ConflictError, UnprocessableEntityError
+
+# Max time an in-flight reservation lives if its owner crashes before completing.
+RESERVATION_TTL_SECONDS = 30
+# How long a duplicate request waits for the in-flight original to finish.
+WAIT_TIMEOUT_SECONDS = 10.0
+WAIT_POLL_INTERVAL_SECONDS = 0.05
+
+_STATE_PROCESSING = "processing"
+_STATE_COMPLETED = "completed"
 
 
 class IdempotencyService:
-    """Redis-backed idempotency service tracking request payloads and cached responses."""
+    """Redis-backed idempotency service tracking request payloads and cached responses.
+
+    Uses an atomic ``SET NX`` reservation so concurrent requests sharing a key
+    (even across multiple worker processes) execute the action only once.
+    """
 
     def __init__(self, redis_client: redis.Redis) -> None:
         self.redis = redis_client
@@ -24,23 +38,55 @@ class IdempotencyService:
         """Return Redis key for an idempotency identifier."""
         return f"idempotency:{idempotency_key}"
 
-    async def get_cached_response(
-        self, idempotency_key: str, payload: Any
-    ) -> tuple[int, dict[str, Any]] | None:
-        """Retrieve cached response or raise 422 if reused with a different body (Level 4)."""
-        key = self._redis_key(idempotency_key)
-        raw_record = await self.redis.get(key)
-        if raw_record is None:
-            return None
-
-        record = json.loads(raw_record)
-        expected_hash = self._hash_payload(payload)
-        if record.get("body_hash") != expected_hash:
+    def _check_hash(self, record: dict[str, Any], payload: Any) -> None:
+        if record.get("body_hash") != self._hash_payload(payload):
             raise UnprocessableEntityError(
                 "Idempotency-Key reused with a different request body"
             )
 
-        return int(record["status_code"]), dict(record["response_body"])
+    async def begin(
+        self, idempotency_key: str, payload: Any
+    ) -> tuple[int, dict[str, Any]] | None:
+        """Atomically claim the key or resolve it against an existing record.
+
+        Returns:
+            None if the caller now owns the key and must execute the action
+            (and then call ``save_response`` or ``release``); otherwise the
+            cached (status_code, body) of the original request.
+
+        Raises:
+            UnprocessableEntityError: Key reused with a different body (422).
+            ConflictError: Original request still in flight after the wait timeout (409).
+        """
+        key = self._redis_key(idempotency_key)
+        reservation = json.dumps(
+            {"state": _STATE_PROCESSING, "body_hash": self._hash_payload(payload)}
+        )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + WAIT_TIMEOUT_SECONDS
+
+        while True:
+            if await self.redis.set(
+                key, reservation, nx=True, ex=RESERVATION_TTL_SECONDS
+            ):
+                return None
+
+            raw_record = await self.redis.get(key)
+            if raw_record is None:
+                # Expired/released between SET and GET; try to claim again.
+                continue
+
+            record = json.loads(raw_record)
+            self._check_hash(record, payload)
+
+            if record.get("state") == _STATE_COMPLETED:
+                return int(record["status_code"]), dict(record["response_body"])
+
+            if loop.time() >= deadline:
+                raise ConflictError(
+                    "A request with this Idempotency-Key is still being processed"
+                )
+            await asyncio.sleep(WAIT_POLL_INTERVAL_SECONDS)
 
     async def save_response(
         self,
@@ -52,6 +98,7 @@ class IdempotencyService:
         """Store status code and response payload in Redis under idempotency key."""
         key = self._redis_key(idempotency_key)
         record = {
+            "state": _STATE_COMPLETED,
             "body_hash": self._hash_payload(payload),
             "status_code": status_code,
             "response_body": response_body,
@@ -61,3 +108,7 @@ class IdempotencyService:
             json.dumps(record),
             ex=self.settings.idempotency_ttl_seconds,
         )
+
+    async def release(self, idempotency_key: str) -> None:
+        """Drop an in-flight reservation so the client can retry (e.g. after a 5xx)."""
+        await self.redis.delete(self._redis_key(idempotency_key))

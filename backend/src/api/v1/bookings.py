@@ -159,11 +159,14 @@ async def create_booking(
     except Exception as exc:
         raise BadRequestError("Invalid JSON request body") from exc
 
-    status_code, response_body = await service.create_booking(
+    status_code, response_body, is_replayed = await service.create_booking(
         raw_payload=raw_payload,
         idempotency_key=idempotency_key,
     )
-    return JSONResponse(status_code=status_code, content=response_body)
+    headers = {}
+    if is_replayed:
+        headers["Idempotent-Replayed"] = "true"
+    return JSONResponse(status_code=status_code, content=response_body, headers=headers)
 
 
 @router.get(
