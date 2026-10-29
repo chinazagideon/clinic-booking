@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { TopNav } from './components/common/TopNav';
 import { TabKey } from './components/common/NavPillGroup';
 import { Footer } from './components/common/Footer';
@@ -12,38 +12,54 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('booking');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = (toast: Omit<ToastMessage, 'id'>) => {
-    const id = 'toast-' + Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { ...toast, id }]);
-  };
+  const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
+    setToasts((prev) => {
+      // Prevent duplicate toasts with the exact same title & message
+      const isDuplicate = prev.some(
+        (t) => t.type === toast.type && t.title === toast.title && t.message === toast.message
+      );
+      if (isDuplicate) return prev;
 
-  const removeToast = (id: string) => {
+      const id = 'toast-' + Math.random().toString(36).substring(2, 9);
+      // Keep at most 3 active toasts to avoid flooding
+      const updated = [...prev, { ...toast, id }];
+      return updated.slice(-3);
+    });
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
-  const handleErrorToast = (err: ApiError) => {
-    const isRateLimit = err.status === 429 || (err.retryAfter !== undefined && err.retryAfter > 0);
-    addToast({
-      type: isRateLimit ? 'rate-limit' : 'error',
-      title: isRateLimit
-        ? 'Rate Limit Exceeded (Level 5)'
-        : err.status === 409
-        ? 'Booking Conflict (Level 3)'
-        : err.status === 401
-        ? 'Unauthorized (X-API-Key)'
-        : 'API Error',
-      message: err.error || 'An unexpected error occurred.',
-      retryAfter: err.retryAfter,
-    });
-  };
+  const handleErrorToast = useCallback(
+    (err: ApiError) => {
+      const isRateLimit = err.status === 429 || (err.retryAfter !== undefined && err.retryAfter > 0);
+      addToast({
+        type: isRateLimit ? 'rate-limit' : 'error',
+        title: isRateLimit
+          ? 'Rate Limit Exceeded (Level 5)'
+          : err.status === 409
+          ? 'Booking Conflict (Level 3)'
+          : err.status === 401
+          ? 'Unauthorized (X-API-Key)'
+          : 'API Error',
+        message: err.error || 'An unexpected error occurred.',
+        retryAfter: err.retryAfter,
+      });
+    },
+    [addToast]
+  );
 
-  const handleSuccessToast = (title: string, message: string) => {
-    addToast({
-      type: 'success',
-      title,
-      message,
-    });
-  };
+  const handleSuccessToast = useCallback(
+    (title: string, message: string) => {
+      addToast({
+        type: 'success',
+        title,
+        message,
+      });
+    },
+    [addToast]
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-white text-[#111111]">

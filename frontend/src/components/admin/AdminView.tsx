@@ -16,6 +16,7 @@ import { useSlots } from '../../hooks/useSlots';
 import { useResetSlots } from '../../hooks/useResetSlots';
 import { generateDefaultSlots } from '../../services/apiPresets';
 import { formatFullDateTime, formatTimeOnly } from '../../utils/date';
+import { ErrorState } from '../common/ErrorState';
 
 interface AdminViewProps {
   onErrorToast: (error: ApiError) => void;
@@ -27,7 +28,12 @@ export const AdminView: React.FC<AdminViewProps> = ({
   onSuccessToast,
 }) => {
   // Use designated slots hook for inventory
-  const { slots: currentSlots, isLoading: isLoadingSlots, refetch: fetchLiveSlots } = useSlots();
+  const {
+    slots: currentSlots,
+    isLoading: isLoadingSlots,
+    error: slotsError,
+    refetch: fetchLiveSlots,
+  } = useSlots();
 
   // Use designated reset slots hook
   const { resetSlotsAsync, isResetting } = useResetSlots();
@@ -254,6 +260,15 @@ export const AdminView: React.FC<AdminViewProps> = ({
             <div className="py-20 text-center text-xs text-[#6b7280]">
               <div className="w-6 h-6 border-2 border-[#111111]/20 border-t-[#111111] rounded-full animate-spin mx-auto mb-3"></div>
               Refreshing slots table...
+            </div>
+          ) : slotsError && currentSlots.length === 0 ? (
+            <div className="p-6">
+              <ErrorState
+                title="Unable to load slot inventory"
+                message={slotsError.error}
+                onRetry={() => fetchLiveSlots()}
+                isRetrying={isLoadingSlots}
+              />
             </div>
           ) : currentSlots.length === 0 ? (
             <div className="py-20 text-center text-xs text-[#6b7280] px-4">

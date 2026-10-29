@@ -14,6 +14,7 @@ import {
   formatWeekdayShort,
   formatTimeOnly,
 } from '../../utils/date';
+import { ErrorState } from '../common/ErrorState';
 import { BookingModal } from './BookingModal';
 import { BookingSuccessCard } from './BookingSuccessCard';
 
@@ -37,15 +38,8 @@ export const BookingView: React.FC<BookingViewProps> = ({
   } | null>(null);
   const [showOnlyAvailable, setShowOnlyAvailable] = useState<boolean>(true);
 
-  // Use designated slots hook
+  // Use designated slots hook - clean state management without recursive toast calls
   const { slots, isLoading, error, refetch, providers, availableDates } = useSlots(selectedProvider);
-
-  // Trigger error toast if hook reports error
-  useEffect(() => {
-    if (error) {
-      onErrorToast(error);
-    }
-  }, [error, onErrorToast]);
 
   // Auto-select first date if none selected
   useEffect(() => {
@@ -173,7 +167,15 @@ export const BookingView: React.FC<BookingViewProps> = ({
               </p>
             </div>
 
-            {availableDates.length === 0 ? (
+            {error && slots.length === 0 ? (
+              <ErrorState
+                compact
+                title="Unable to reach clinic API"
+                message={error.error}
+                onRetry={() => refetch(selectedProvider)}
+                isRetrying={isLoading}
+              />
+            ) : availableDates.length === 0 ? (
               <div className="p-6 text-center bg-white border border-[#e5e7eb] rounded-xl text-xs text-[#6b7280]">
                 No slot dates found. Go to <span className="font-semibold text-[#111111]">Admin Operations</span> to seed slots.
               </div>
@@ -268,6 +270,13 @@ export const BookingView: React.FC<BookingViewProps> = ({
                 <div className="w-6 h-6 border-2 border-[#111111]/20 border-t-[#111111] rounded-full animate-spin mx-auto mb-3"></div>
                 Loading slots from backend...
               </div>
+            ) : error && slots.length === 0 ? (
+              <ErrorState
+                title="Unable to connect to clinic API"
+                message={error.error}
+                onRetry={() => refetch(selectedProvider)}
+                isRetrying={isLoading}
+              />
             ) : currentSlots.length === 0 ? (
               <div className="py-16 text-center border-2 border-dashed border-[#e5e7eb] rounded-xl p-6">
                 <Clock className="w-8 h-8 text-[#9ca3af] mx-auto mb-2" />

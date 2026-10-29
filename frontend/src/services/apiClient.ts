@@ -10,60 +10,95 @@ import {
 
 // Configured strictly from environment variables
 const API_KEY = (import.meta.env.VITE_API_KEY as string) || '';
-const BASE_URL = (import.meta.env.VITE_BACKEND_URL as string) || '';
+
+/**
+ * Resolves the backend base URL dynamically from environment.
+ */
+function getBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_BACKEND_URL as string)?.trim();
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  return '';
+}
 
 async function request<T>(
   path: string,
   options: RequestInit = {},
   customHeaders: Record<string, string> = {}
 ): Promise<T> {
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) {
+    const missingUrlError: ApiError = {
+      error: 'Backend API URL is not configured. Please define VITE_BACKEND_URL in your environment.',
+      status: 0,
+    };
+    throw missingUrlError;
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-API-Key': API_KEY,
     ...customHeaders,
   };
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      ...headers,
-      ...(options.headers as Record<string, string>),
-    },
-  });
+  const url = `${baseUrl}${path}`;
 
-  if (!response.ok) {
-    let errorMessage = `Request failed with status ${response.status}`;
-    let retryAfter: number | undefined;
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...headers,
+        ...(options.headers as Record<string, string>),
+      },
+    });
 
-    const retryHeader = response.headers.get('Retry-After');
-    if (retryHeader) {
-      const parsed = parseInt(retryHeader, 10);
-      if (!isNaN(parsed)) retryAfter = parsed;
-    }
+    if (!response.ok) {
+      let errorMessage = `Request failed with status ${response.status}`;
+      let retryAfter: number | undefined;
 
-    try {
-      const json = await response.json();
-      if (json && typeof json.error === 'string') {
-        errorMessage = json.error;
+      const retryHeader = response.headers.get('Retry-After');
+      if (retryHeader) {
+        const parsed = parseInt(retryHeader, 10);
+        if (!isNaN(parsed)) retryAfter = parsed;
       }
-    } catch {
-      // Non-JSON response
+
+      try {
+        const json = await response.json();
+        if (json && typeof json.error === 'string') {
+          errorMessage = json.error;
+        }
+      } catch {
+        // Non-JSON response (e.g. 404 from proxy or gateway)
+        if (response.status === 404) {
+          errorMessage = `Endpoint ${path} returned 404 Not Found at ${baseUrl}.`;
+        }
+      }
+
+      const err: ApiError = {
+        error: errorMessage,
+        status: response.status,
+        retryAfter,
+      };
+      throw err;
     }
 
-    const err: ApiError = {
-      error: errorMessage,
-      status: response.status,
-      retryAfter,
+    // Handle 200/201 responses with no content or JSON
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return (await response.json()) as T;
+    }
+    return {} as T;
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'status' in err) {
+      throw err;
+    }
+    const networkErr: ApiError = {
+      error: (err as Error)?.message || 'Failed to connect to backend server.',
+      status: 0,
     };
-    throw err;
+    throw networkErr;
   }
-
-  // Handle 200/201 responses with no content or JSON
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    return (await response.json()) as T;
-  }
-  return {} as T;
 }
 
 export const clinicApi = {
