@@ -15,7 +15,6 @@ import {
 } from '../../types/api';
 import { useCreateBooking } from '../../hooks/useCreateBooking';
 import { formatDateWithWeekday, formatTimeRange } from '../../utils/date';
-import { APP_CONFIG } from '../../constants/app';
 
 interface BookingModalProps {
   slot: SlotWithAvailability | null;
