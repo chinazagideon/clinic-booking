@@ -4,9 +4,9 @@ export const APP_CONFIG = {
   title: 'Slotly - Clinic Booking',
   tagline: "Modern patient scheduling software",
   copyrightNotice: '© 2026 Slotly ',
-  stackDescription: 'Clinic Booking Assessment',
+  stackDescription: 'Modern Clinic Booking System',
   rateLimit: {
     maxAttemptsPerMinute: 5,
   },
-  swagger_endpoint: "http://localhost:8000/docs" 
+  swagger_endpoint: `${(import.meta.env.VITE_BACKEND_URL as string) ?? ''}/docs`,
 } as const;
