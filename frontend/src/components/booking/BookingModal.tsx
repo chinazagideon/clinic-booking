@@ -157,7 +157,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               />
             </div>
             <p className="text-[11px] text-[#6b7280] mt-1">
-              Rate limit: max {APP_CONFIG.rateLimit.maxAttemptsPerMinute} bookings per email per minute (Level 5).
+              Rate limit: max {APP_CONFIG.rateLimit.maxAttemptsPerMinute} bookings per email per minute.
             </p>
           </div>
 
@@ -172,7 +172,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   className="rounded text-[#111111] focus:ring-0"
                 />
                 <span className="text-xs font-medium text-[#374151]">
-                  Send Idempotency-Key Header (Level 4)
+                  Send Idempotency-Key Header
                 </span>
               </label>
 

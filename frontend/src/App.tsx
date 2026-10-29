@@ -43,9 +43,9 @@ export const App: React.FC = () => {
       addToast({
         type: isRateLimit ? 'rate-limit' : 'error',
         title: isRateLimit
-          ? 'Rate Limit Exceeded (Level 5)'
+          ? 'Rate Limit Exceeded'
           : err.status === 409
-          ? 'Booking Conflict (Level 3)'
+          ? 'Booking Conflict'
           : err.status === 401
           ? 'Unauthorized (X-API-Key)'
           : 'API Error',

@@ -120,7 +120,7 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({
             Lookup by Patient Email
           </h2>
           <p className="text-xs text-[#6b7280] mb-4">
-            Supports case-insensitive search and cursor-based pagination (Level 4).
+            Supports case-insensitive search and cursor-based pagination.
           </p>
 
           <form onSubmit={handleSearch} className="flex gap-2">
@@ -189,11 +189,10 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({
             <div className="flex items-center space-x-2">
               <span className="text-xs font-bold text-[#111111]">Single Booking Lookup Result</span>
               <span
-                className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${
-                  idLookupBooking.status === 'confirmed'
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${idLookupBooking.status === 'confirmed'
                     ? 'bg-[#ecfdf5] text-[#065f46] border-[#a7f3d0]'
                     : 'bg-[#fef2f2] text-[#991b1b] border-[#fecaca]'
-                }`}
+                  }`}
               >
                 {idLookupBooking.status}
               </span>
@@ -294,11 +293,10 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({
                         {booking.id}
                       </span>
                       <span
-                        className={`text-xs px-2.5 py-0.5 rounded-full font-medium inline-flex items-center space-x-1 ${
-                          booking.status === 'confirmed'
+                        className={`text-xs px-2.5 py-0.5 rounded-full font-medium inline-flex items-center space-x-1 ${booking.status === 'confirmed'
                             ? 'bg-[#ecfdf5] text-[#065f46] border border-[#a7f3d0]'
                             : 'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]'
-                        }`}
+                          }`}
                       >
                         {booking.status === 'confirmed' ? (
                           <CheckCircle className="w-3 h-3 text-[#10b981]" />

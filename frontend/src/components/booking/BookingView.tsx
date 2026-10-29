@@ -243,7 +243,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
                 <span>Appointment Details</span>
               </div>
               <p className="text-[#6b7280] leading-relaxed">
-                Standard consultations are 30 minutes in length. Slots are locked using pessimistic DB locks (Level 3) to prevent double-booking.
+                Standard consultations are 30 minutes in length. Slots are locked using pessimistic DB locks to prevent double-booking.
               </p>
             </div>
           </div>
