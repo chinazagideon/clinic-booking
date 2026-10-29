@@ -10,7 +10,13 @@ import { ApiError } from './types/api';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('booking');
+  const [selectedUserEmail, setSelectedUserEmail] = useState<string>('');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const handleViewMyBookings = useCallback((email: string) => {
+    setSelectedUserEmail(email);
+    setActiveTab('manage');
+  }, []);
 
   const addToast = useCallback((toast: Omit<ToastMessage, 'id'>) => {
     setToasts((prev) => {
@@ -70,11 +76,12 @@ export const App: React.FC = () => {
           <BookingView
             onErrorToast={handleErrorToast}
             onSuccessToast={handleSuccessToast}
-            onViewMyBookings={() => setActiveTab('manage')}
+            onViewMyBookings={handleViewMyBookings}
           />
         )}
         {activeTab === 'manage' && (
           <MyBookingsView
+            initialEmail={selectedUserEmail}
             onErrorToast={handleErrorToast}
             onSuccessToast={handleSuccessToast}
           />

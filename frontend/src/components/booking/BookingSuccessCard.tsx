@@ -7,7 +7,7 @@ interface BookingSuccessCardProps {
   booking: Booking;
   slot?: SlotWithAvailability;
   onBookAnother: () => void;
-  onViewBookings: () => void;
+  onViewBookings: (email: string) => void;
 }
 
 export const BookingSuccessCard: React.FC<BookingSuccessCardProps> = ({
@@ -75,7 +75,7 @@ export const BookingSuccessCard: React.FC<BookingSuccessCardProps> = ({
           Book Another Slot
         </button>
         <button
-          onClick={onViewBookings}
+          onClick={() => onViewBookings(booking.email)}
           className="w-full sm:w-auto flex items-center justify-center space-x-1.5 px-5 py-2.5 bg-[#111111] text-white text-sm font-semibold rounded-lg hover:bg-[#242424] transition-colors"
         >
           <span>View My Bookings</span>

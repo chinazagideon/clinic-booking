@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   Calendar,
@@ -17,15 +17,17 @@ import { useBookings } from '../../hooks/useBookings';
 import { formatTimestamp } from '../../utils/date';
 
 interface MyBookingsViewProps {
+  initialEmail?: string;
   onErrorToast: (error: ApiError) => void;
   onSuccessToast: (title: string, message: string) => void;
 }
 
 export const MyBookingsView: React.FC<MyBookingsViewProps> = ({
+  initialEmail,
   onErrorToast,
   onSuccessToast,
 }) => {
-  const [searchEmailInput, setSearchEmailInput] = useState('');
+  const [searchEmailInput, setSearchEmailInput] = useState(initialEmail || '');
   const [searchIdInput, setSearchIdInput] = useState('');
   const [bookingToCancel, setBookingToCancel] = useState<Booking | null>(null);
 
@@ -47,6 +49,17 @@ export const MyBookingsView: React.FC<MyBookingsViewProps> = ({
     isCancelling,
     refreshCurrent,
   } = useBookings();
+
+  // If initialEmail is provided (e.g. redirected from successful booking), search automatically
+  useEffect(() => {
+    if (initialEmail && initialEmail.trim()) {
+      const email = initialEmail.trim();
+      setSearchEmailInput(email);
+      searchBookings(email).catch((err) => {
+        onErrorToast(err as ApiError);
+      });
+    }
+  }, [initialEmail, searchBookings, onErrorToast]);
 
   // Handle email search
   const handleSearch = async (e?: React.FormEvent) => {

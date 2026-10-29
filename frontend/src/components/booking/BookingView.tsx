@@ -21,7 +21,7 @@ import { BookingSuccessCard } from './BookingSuccessCard';
 interface BookingViewProps {
   onErrorToast: (error: ApiError) => void;
   onSuccessToast: (title: string, message: string) => void;
-  onViewMyBookings: () => void;
+  onViewMyBookings: (email: string) => void;
 }
 
 export const BookingView: React.FC<BookingViewProps> = ({
@@ -71,7 +71,7 @@ export const BookingView: React.FC<BookingViewProps> = ({
           booking={confirmedBooking.booking}
           slot={confirmedBooking.slot}
           onBookAnother={() => setConfirmedBooking(null)}
-          onViewBookings={onViewMyBookings}
+          onViewBookings={() => onViewMyBookings(confirmedBooking.booking.email)}
         />
       </div>
     );
