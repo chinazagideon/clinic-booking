@@ -14,6 +14,9 @@ from src.core.exceptions import (
     ConflictError,
     NotFoundError,
     RateLimitExceededError,
+    SlotAlreadyBookedError,
+    SlotAlreadyStartedError,
+    SlotNotFoundError,
     UnprocessableEntityError,
 )
 from src.models.db.booking import BookingModel
@@ -25,165 +28,62 @@ from src.models.schemas.booking import (
 from src.models.schemas.slot import format_datetime_utc
 from src.repositories.booking_repository import BookingRepository
 from src.repositories.slot_repository import SlotRepository
-from src.services.idempotency import IdempotencyService
-from src.services.rate_limiter import RateLimiterService
-
-MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 _slot_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 class BookingService:
     """Core domain service orchestrating booking lifecycle, concurrency,
-
-    idempotency, rate limiting, and cursor-based pagination (Levels 1–5).
+    and cursor-based pagination (Levels 1–5).
     """
 
-    def __init__(self, session: AsyncSession, redis_client: redis.Redis) -> None:
-        """Initialize BookingService with database session and Redis client.
+    def __init__(
+        self, session: AsyncSession, redis_client: redis.Redis | None = None
+    ) -> None:
+        """Initialize BookingService with database session.
 
         Args:
             session: Active asynchronous SQLAlchemy database session.
-            redis_client: Active asynchronous Redis client connection.
+            redis_client: Optional Redis client connection (cross-cutting transport concerns
+                are handled by API decorators).
         """
         self.session = session
         self.slot_repo = SlotRepository(session)
         self.booking_repo = BookingRepository(session)
-        self.rate_limiter = RateLimiterService(redis_client)
-        self.idempotency = IdempotencyService(redis_client)
 
     async def create_booking(
         self,
-        raw_payload: Any,
-        idempotency_key: str | None = None,
-    ) -> tuple[int, dict[str, Any], bool]:
-        """Create a new booking with idempotency and rate limiting safeguards.
+        payload: NewBookingPayload,
+    ) -> BookingResponse:
+        """Reserve an appointment slot for a patient.
 
-        Handles:
-        - Level 5: Rate limit check per email (max 5 attempts/minute).
-        - Level 4: Idempotency-Key replay (same body -> same response; different body -> 422).
-        - Levels 1-3: Slot validation, concurrency row lock, and DB insertion.
+        Validates slot availability and start time via SlotModel invariants,
+        acquires concurrency locks, and atomically creates the booking.
 
         Args:
-            raw_payload: The unvalidated JSON request body dictionary.
-            idempotency_key: Optional Idempotency-Key HTTP header value.
+            payload: Validated patient booking payload.
 
         Returns:
-            A tuple of (http_status_code, response_payload_dict, is_replayed).
+            The created booking response model.
 
         Raises:
-            RateLimitExceededError: When email attempt limit is exceeded (HTTP 429).
-            UnprocessableEntityError: When an idempotency key is reused with a different body (HTTP 422).
-            BadRequestError: When request payload validation fails or slot is in the past (HTTP 400).
-            NotFoundError: When slot does not exist (HTTP 404).
-            ConflictError: When slot is already booked (HTTP 409).
+            SlotNotFoundError: When slot does not exist (HTTP 404).
+            SlotAlreadyStartedError: When slot start time has already passed (HTTP 400).
+            SlotAlreadyBookedError: When slot is already booked (HTTP 409).
         """
-        raw_email = (
-            raw_payload.get("email") if isinstance(raw_payload, dict) else None
-        )
-        clean_idem_key = idempotency_key.strip() if idempotency_key else None
-        if clean_idem_key and len(clean_idem_key) > MAX_IDEMPOTENCY_KEY_LENGTH:
-            raise BadRequestError(
-                f"Idempotency-Key must be at most {MAX_IDEMPOTENCY_KEY_LENGTH} characters"
-            )
-
-        # Handle Level 4: Idempotency-Key workflow
-        if clean_idem_key:
-            # Atomically claim the key (safe across workers) or resolve it
-            # against the original request.
-            try:
-                cached = await self.idempotency.begin(clean_idem_key, raw_payload)
-            except UnprocessableEntityError:
-                # Payload mismatch (422) counts as a failed attempt towards rate limit
-                await self.rate_limiter.check_and_record_attempt(raw_email)
-                raise
-
-            # Replay identical previous response without repeating side-effects
-            if cached is not None:
-                return cached[0], cached[1], True
-
-            # We own the key from here on; any non-cached outcome must release it.
-            try:
-                # Record rate-limiting attempt before executing initial action
-                await self.rate_limiter.check_and_record_attempt(raw_email)
-                status_code, response_body = await self._execute_booking_creation(
-                    raw_payload
-                )
-            except AppError as exc:
-                if isinstance(exc, RateLimitExceededError):
-                    # Rate-limited attempts are not cached; client may retry later
-                    await self.idempotency.release(clean_idem_key)
-                else:
-                    # Cache failed attempt response under this idempotency key
-                    await self.idempotency.save_response(
-                        clean_idem_key,
-                        raw_payload,
-                        exc.status_code,
-                        {"error": exc.message},
-                    )
-                raise
-            except BaseException:
-                # Unexpected failure: free the key so the client can retry
-                await self.idempotency.release(clean_idem_key)
-                raise
-
-            # Cache successful creation response under this idempotency key
-            await self.idempotency.save_response(
-                clean_idem_key,
-                raw_payload,
-                status_code,
-                response_body,
-            )
-            return status_code, response_body, False
-
-        # Non-idempotent request: record attempt and create booking
-        await self.rate_limiter.check_and_record_attempt(raw_email)
-        status_code, response_body = await self._execute_booking_creation(raw_payload)
-        return status_code, response_body, False
-
-    async def _execute_booking_creation(
-        self, raw_payload: Any
-    ) -> tuple[int, dict[str, Any]]:
-        """Validate input fields and execute atomic booking creation in the database.
-
-        Enforces:
-        - Level 2: Field presence, whitespace trimming, lowercase email, valid email syntax.
-        - Level 2: Slot exists (404) and has not already started (400).
-        - Level 3: Concurrency protection via row locking (`SELECT FOR UPDATE`),
-          preventing double bookings (409).
-
-        Args:
-            raw_payload: The raw request body dictionary.
-
-        Returns:
-            Tuple of (201, serialized_booking_response_dict).
-        """
-        # Validate payload and sanitize inputs (strip whitespace, lowercase email)
-        payload = NewBookingPayload.validate_raw(raw_payload)
-
         # Acquire lock for the targeted slot to serialize concurrent requests
         async with _slot_locks[payload.slot_id]:
             # Lock the slot row in the database
             slot = await self.slot_repo.get_slot_for_update(payload.slot_id)
             if slot is None:
-                raise NotFoundError("Slot not found")
+                raise SlotNotFoundError("Slot not found")
 
-            # Check if slot start time has already passed
-            slot_start = (
-                slot.start.replace(tzinfo=timezone.utc)
-                if slot.start.tzinfo is None
-                else slot.start.astimezone(timezone.utc)
-            )
             now = datetime.now(timezone.utc)
-            if slot_start <= now:
-                raise BadRequestError("Slot has already started")
-
-            # Verify slot does not already have an active confirmed booking
             already_booked = await self.booking_repo.has_confirmed_booking(
                 payload.slot_id
             )
-            if already_booked:
-                raise ConflictError("Slot is already booked")
+            # Delegate domain rules to SlotModel aggregate
+            slot.assert_bookable(now=now, already_booked=already_booked)
 
             # Create confirmed booking record
             booking = BookingModel(
@@ -200,10 +100,9 @@ class BookingService:
                 await self.session.commit()
             except IntegrityError as exc:
                 await self.session.rollback()
-                raise ConflictError("Slot is already booked") from exc
+                raise SlotAlreadyBookedError("Slot is already booked") from exc
 
-            response_dto = BookingResponse.model_validate(booking)
-            return 201, response_dto.model_dump(mode="json")
+            return BookingResponse.model_validate(booking)
 
     async def get_booking(self, booking_id: str) -> BookingResponse:
         """Retrieve a booking by its unique identifier (Level 1).

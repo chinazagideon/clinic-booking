@@ -47,6 +47,27 @@ class ConflictError(AppError):
     status_code = status.HTTP_409_CONFLICT
 
 
+class SlotNotFoundError(NotFoundError):
+    """Raised when an appointment slot does not exist (HTTP 404)."""
+
+    def __init__(self, message: str = "Slot not found") -> None:
+        super().__init__(message=message)
+
+
+class SlotAlreadyStartedError(BadRequestError):
+    """Raised when an appointment slot has already started (HTTP 400)."""
+
+    def __init__(self, message: str = "Slot has already started") -> None:
+        super().__init__(message=message)
+
+
+class SlotAlreadyBookedError(ConflictError):
+    """Raised when an appointment slot already has a confirmed booking (HTTP 409)."""
+
+    def __init__(self, message: str = "Slot is already booked") -> None:
+        super().__init__(message=message)
+
+
 class UnprocessableEntityError(AppError):
     """Raised for idempotency key payload mismatches (HTTP 422)."""
 

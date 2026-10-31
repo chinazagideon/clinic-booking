@@ -1,9 +1,16 @@
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, status
 from fastapi.responses import JSONResponse
+import redis.asyncio as redis
 
+from src.api.decorators.idempotency import idempotent_action
 from src.api.deps import get_booking_service
 from src.core.exceptions import BadRequestError
-from src.models.schemas.booking import BookingResponse, PaginatedBookingsResponse
+from src.core.redis import get_redis_client
+from src.models.schemas.booking import (
+    BookingResponse,
+    NewBookingPayload,
+    PaginatedBookingsResponse,
+)
 from src.services.booking_service import BookingService
 
 router = APIRouter(tags=["Bookings"])
@@ -117,6 +124,7 @@ router = APIRouter(tags=["Bookings"])
         },
     },
 )
+@idempotent_action(key_header="Idempotency-Key", rate_limit_field="email")
 async def create_booking(
     request: Request,
     idempotency_key: str | None = Header(
@@ -126,7 +134,8 @@ async def create_booking(
         examples=["9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"],
     ),
     service: BookingService = Depends(get_booking_service),
-) -> JSONResponse:
+    redis_client: redis.Redis = Depends(get_redis_client),
+) -> BookingResponse:
     """Reserve an appointment slot for a patient with built-in concurrency safety.
 
     ### How to leverage this endpoint:
@@ -154,19 +163,15 @@ async def create_booking(
       }'
     ```
     """
-    try:
-        raw_payload = await request.json()
-    except Exception as exc:
-        raise BadRequestError("Invalid JSON request body") from exc
+    raw_payload = getattr(request.state, "raw_payload", None)
+    if raw_payload is None:
+        try:
+            raw_payload = await request.json()
+        except Exception as exc:
+            raise BadRequestError("Invalid JSON request body") from exc
 
-    status_code, response_body, is_replayed = await service.create_booking(
-        raw_payload=raw_payload,
-        idempotency_key=idempotency_key,
-    )
-    headers = {}
-    if is_replayed:
-        headers["Idempotent-Replayed"] = "true"
-    return JSONResponse(status_code=status_code, content=response_body, headers=headers)
+    payload = NewBookingPayload.validate_raw(raw_payload)
+    return await service.create_booking(payload)
 
 
 @router.get(
